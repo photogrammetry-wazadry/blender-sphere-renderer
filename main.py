@@ -24,7 +24,7 @@ def join_path_parts(path_parts):
 def unzip_recursively(zip_path):  # Unzip main archive if one exists
     if zip_path.suffix == ".zip":
         split_path = PurePath(zip_path).parts
-        extract_dir = os.path.join('./model/', join_path_parts(split_path[1:-1]))
+        extract_dir = os.path.join('./temp/', join_path_parts(split_path[1:-1]))
         print(extract_dir)
 
         os.system(f"unzip {zip_path} -d {extract_dir}")  # Unzip archive
@@ -67,11 +67,11 @@ def calc_center_point(system_objects):
 
 def orbit_render(file_name):
     input_path = Path(os.path.join('./input', file_name))
-    extract_path = Path(os.path.join('./model', file_name))
+    extract_path = Path(os.path.join('./temp', file_name))
 
     # Clear working directory
-    os.system(f"rm -rf ./model/*")
-    os.system(f"cp -r {input_path} ./model")
+    os.system(f"rm -rf ./temp/*")
+    os.system(f"cp -r {input_path} ./temp")
 
     unzip_recursively(extract_path)
 
@@ -80,7 +80,7 @@ def orbit_render(file_name):
     for name in bpy.context.scene.objects:  # Save all object names from template
         system_objects.append(name.name)
 
-    for root, dirs, files in os.walk("./model"):
+    for root, dirs, files in os.walk("./temp"):
         for filename in files:
             if Path(filename).suffix == ".obj":
                 bpy.ops.import_scene.obj(filepath=os.path.join(root, filename), filter_glob="*.obj;*.mtl",
@@ -145,4 +145,28 @@ def orbit_render(file_name):
 
 
 if __name__ == '__main__':
-    orbit_render("tilbury_fort_trailer.zip")
+    model_index = 1
+
+    for root, dirs, files in os.walk("./input/"):
+        for filename in files:
+            render_dir = os.path.join("output/", f"{str(model_index).zfill(3)}_{os.path.splitext(filename)[0]}")
+            model_index += 1
+            
+            if os.path.exists(render_dir): continue
+
+            orbit_render(filename)  # Import and normalise size of the model
+
+            # Clear temporary render directory
+            for file in glob.glob("render/*"):
+                os.remove(file)
+
+            os.system("blender -b project.blend -a")  # Render project
+
+            # Clear and create render directory (where files are stored at the end)
+            os.mkdir(render_dir)
+
+            # Move rendered images to model's directory
+            for file in glob.glob("render/*"):
+                shutil.move(file, render_dir)
+
+        break  # Non-recursive

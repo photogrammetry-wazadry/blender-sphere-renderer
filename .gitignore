@@ -132,3 +132,7 @@ dmypy.json
 project.blend
 *.blend1
 .idea
+output/*
+render/*
+input/*
+temp/*
