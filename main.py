@@ -5,6 +5,8 @@ from pathlib import Path, PurePath
 import mathutils
 from mathutils import Vector
 import bmesh
+import subprocess
+import time
 
 MAX_DIMENSION = 12
 
@@ -33,6 +35,16 @@ def unzip_recursively(zip_path):  # Unzip main archive if one exists
         for root, dirs, files in os.walk(join_path_parts(split_path[:-1])):
             for filename in files:
                 unzip_recursively(Path(os.path.join(root, filename)))
+
+
+def execute(cmd):
+    popen = subprocess.Popen(cmd, stdout=subprocess.PIPE, universal_newlines=True)
+    for stdout_line in iter(popen.stdout.readline, ""):
+        yield stdout_line
+    popen.stdout.close()
+    return_code = popen.wait()
+    if return_code:
+        raise subprocess.CalledProcessError(return_code, cmd)
 
 
 def calc_center_point(system_objects):
@@ -149,24 +161,33 @@ if __name__ == '__main__':
 
     for root, dirs, files in os.walk("./input/"):
         for filename in files:
-            render_dir = os.path.join("output/", f"{str(model_index).zfill(3)}_{os.path.splitext(filename)[0]}")
+            render_folder_name = f"{str(model_index).zfill(3)}_{os.path.splitext(filename)[0]}"
+            render_dir = os.path.join("output/", render_folder_name)
             model_index += 1
-            
-            if os.path.exists(render_dir): continue
+
+            files = glob.glob(os.path.join(render_dir, "*"))
+            last_rendered_index = 0
+
+            if len(files) != 0:
+                last_rendered = sorted(files)[-1]
+                last_rendered_index = int(os.path.splitext(PurePath(last_rendered).parts[-1])[0])
+
+            if last_rendered_index == 300:
+                print(f"skipped {render_folder_name}. already rendered")
+                continue
 
             orbit_render(filename)  # Import and normalise size of the model
 
-            # Clear temporary render directory
-            for file in glob.glob("render/*"):
-                os.remove(file)
-
-            os.system("blender -b project.blend -a")  # Render project
-
             # Clear and create render directory (where files are stored at the end)
-            os.mkdir(render_dir)
+            if not os.path.exists(render_dir):
+                os.mkdir(render_dir)
 
-            # Move rendered images to model's directory
-            for file in glob.glob("render/*"):
-                shutil.move(file, render_dir)
+            cmd = f"blender -b project.blend -o `pwd`/output/{render_folder_name}/### -s {last_rendered_index + 1} -a"
+
+            for line in execute(["blender", "-b", "project.blend", "-o", f"{os.path.join(os.getcwd(), 'output/', render_folder_name)}/###",
+                                 "-s", str(last_rendered_index + 1), "-a"]):
+                print(line, end='')
+
+            print(' ---- ' * 10)
 
         break  # Non-recursive
