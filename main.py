@@ -2,8 +2,6 @@ import glob, os
 import bpy
 import shutil
 from pathlib import Path, PurePath
-import mathutils
-from mathutils import Vector
 import bmesh
 import subprocess
 import time
@@ -45,36 +43,6 @@ def execute(cmd):
     return_code = popen.wait()
     if return_code:
         raise subprocess.CalledProcessError(return_code, cmd)
-
-
-def calc_center_point(system_objects):
-    face_cnt, vert_cnt, edge_cnt = 0, 0, 0
-    avg_face, avg_edge, avg_vert = Vector((0, 0, 0)), Vector((0, 0, 0)), Vector((0, 0, 0))
-    for obj in bpy.data.objects:
-        if obj.name in system_objects or obj.data is None: continue
-
-        bpy.context.view_layer.objects.active = obj
-        bpy.ops.object.mode_set(mode='EDIT')
-
-        bm = bmesh.from_edit_mesh(obj.data)
-
-        for vert in bm.verts:
-            vert_cnt += 1
-            avg_vert += vert.co + obj.matrix_world.translation
-
-        for face in bm.faces:
-            face_cnt += 1
-            avg_face += (sum([vert.co + obj.matrix_world.translation for vert in face.verts], Vector()) / len(
-                face.verts))
-
-        for edge in bm.edges:
-            edge_cnt += 1
-            avg_edge += (sum([vert.co + obj.matrix_world.translation for vert in edge.verts], Vector()) / len(
-                edge.verts))
-
-        bpy.ops.object.mode_set(mode='OBJECT')
-
-    bpy.context.scene.cursor.location = ((avg_edge / edge_cnt) + (avg_vert / vert_cnt) + (avg_face / face_cnt)) / 3
 
 
 def orbit_render(file_name):
@@ -133,7 +101,7 @@ def orbit_render(file_name):
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)  # Apple transforms to all objects
 
     # Bounding box
-    bound_box_max, bound_box_min = Vector((-1e7, -1e7, -1e7)), Vector((1e7, 1e7, 1e7))
+    bound_box_max, bound_box_min = [-1e7, -1e7, -1e7], [1e7, 1e7, 1e7]
 
     for obj in new_objects:
         for point in obj.bound_box:
