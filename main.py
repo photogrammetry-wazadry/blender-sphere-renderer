@@ -45,7 +45,7 @@ def execute(cmd):
         raise subprocess.CalledProcessError(return_code, cmd)
 
 
-def orbit_render(file_name):
+def orbit_render(file_name, output_file='project.blend'):
     input_path = Path(os.path.join('./input', file_name))
     extract_path = Path(os.path.join('./temp', file_name))
 
@@ -121,7 +121,7 @@ def orbit_render(file_name):
     bpy.context.scene.cursor.location = (0, 0, 0)
 
     # Save project
-    bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath('project.blend'))
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(output_file))
 
 
 if __name__ == '__main__':
