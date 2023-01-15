@@ -1,11 +1,11 @@
-import glob, os
+import os
+from glob import glob
 import bpy
 import shutil
 from pathlib import Path, PurePath
 import bmesh
 import subprocess
 import argparse
-from glob import glob
 
 
 MAX_DIMENSION = 12
@@ -48,7 +48,7 @@ def orbit_render(file_name, output_file='project.blend'):
     extract_path = Path(os.path.join('./temp', file_name))
 
     # Clear working directory
-    os.system(f"rm -rf ./temp/*")
+    os.system("rm -rf ./temp/*")
     os.system(f"cp -r {input_path} ./temp")
 
     print("Starting unzip")
@@ -60,7 +60,7 @@ def orbit_render(file_name, output_file='project.blend'):
     for name in bpy.context.scene.objects:  # Save all object names from template
         system_objects.append(name.name)
 
-    for root, dirs, files in os.walk("./temp"):
+    for root, _, files in os.walk("./temp"):
         for filename in files:
             if Path(filename).suffix == ".obj":
                 bpy.ops.import_scene.obj(filepath=os.path.join(root, filename), filter_glob="*.obj;*.mtl",
@@ -165,10 +165,10 @@ if __name__ == '__main__':
                                  "-E", ["BLENDER_EEVEE", "CYCLES"][opt.cycles],
                                  "--python", "use_gpu.py", "-o",
                                  f"{os.path.join(os.getcwd(), output_dir)}/###",
-                                 "-s", "1", "-e", "5", "-a"]):
+                                 "-s", "1", "-a"]):
                 try:
                     print(line, end='')
-                except:
-                    print("Encoding error :\\")
+                except subprocess.CalledProcessError as e:
+                    print(e.output)
 
             print(' ---- ' * 10)
