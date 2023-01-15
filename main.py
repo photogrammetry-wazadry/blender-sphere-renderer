@@ -4,13 +4,11 @@ import shutil
 from pathlib import Path, PurePath
 import bmesh
 import subprocess
-import time
+import argparse
+from glob import glob
+
 
 MAX_DIMENSION = 12
-
-
-def download_model(link):
-    pass
 
 
 def join_path_parts(path_parts):
@@ -25,7 +23,6 @@ def unzip_recursively(zip_path):  # Unzip main archive if one exists
     if zip_path.suffix == ".zip":
         split_path = PurePath(zip_path).parts
         extract_dir = os.path.join('./temp/', join_path_parts(split_path[1:-1]))
-        print(extract_dir)
 
         os.system(f"unzip {zip_path} -d {extract_dir}")  # Unzip archive
         os.remove(zip_path)
@@ -46,6 +43,7 @@ def execute(cmd):
 
 
 def orbit_render(file_name, output_file='project.blend'):
+    print(file_name, output_file)
     input_path = Path(os.path.join('./input', file_name))
     extract_path = Path(os.path.join('./temp', file_name))
 
@@ -53,7 +51,9 @@ def orbit_render(file_name, output_file='project.blend'):
     os.system(f"rm -rf ./temp/*")
     os.system(f"cp -r {input_path} ./temp")
 
+    print("Starting unzip")
     unzip_recursively(extract_path)
+    print("Unzip successful")
 
     bpy.ops.wm.open_mainfile(filepath="template.blend")  # Open template project (moving camera and lights)
     system_objects = []
@@ -95,7 +95,7 @@ def orbit_render(file_name, output_file='project.blend'):
         max_scale = max(max_scale, max(obj.dimensions))
 
     scale_factor = MAX_DIMENSION / max_scale
-    print(f"Model max scale: {max_scale}, scaling to {scale_factor}x to normalise size")
+    print(f"Model max scale: {max_scale}, scaling to {scale_factor}x to normalise size\n")
 
     bpy.ops.transform.resize(value=(scale_factor, scale_factor, scale_factor))  # Resize
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)  # Apple transforms to all objects
@@ -125,37 +125,50 @@ def orbit_render(file_name, output_file='project.blend'):
 
 
 if __name__ == '__main__':
-    model_index = 1
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-r", "--render", help="Render images for every project file", action='store_true')
+    parser.add_argument("-c", "--cycles", help="Render project in CYCLES (EEVEE by default)", action='store_true')
+    parser.add_argument("-b", "--blender", required=False, help="Blender call path/command", default="blender")
+    opt = parser.parse_args()
 
-    for root, dirs, files in os.walk("./input/"):
-        for filename in files:
-            render_folder_name = f"{str(model_index).zfill(3)}_{os.path.splitext(filename)[0]}"
-            render_dir = os.path.join("output/", render_folder_name)
-            model_index += 1
+    # Check needed directories
+    if not os.path.exists("input/"):
+        print("No input/ directory with 3D models found. Exiting")
+        exit(0)
 
-            files = glob.glob(os.path.join(render_dir, "*"))
-            last_rendered_index = 0
+    needed_dirs = ["output/", "temp/"]
+    for needed_dir in needed_dirs:
+        if not os.path.exists(needed_dir):
+            os.mkdir(needed_dir)
 
-            if len(files) != 0:
-                last_rendered = sorted(files)[-1]
-                last_rendered_index = int(os.path.splitext(PurePath(last_rendered).parts[-1])[0])
+    for model_index, filename in enumerate(os.listdir("input/")):
+        output_folder_name = f"{str(model_index).zfill(3)}_{os.path.splitext(filename)[0]}"
+        output_dir = os.path.join("output/", output_folder_name)
 
-            if last_rendered_index == 300:
-                print(f"skipped {render_folder_name}. already rendered")
-                continue
+        if not os.path.exists(output_dir):  # Create output_dir
+            os.mkdir(output_dir)
+        else:
+            for delete_file_name in glob(os.path.join(output_dir, "*")):
+                if os.path.isdir(delete_file_name):
+                    shutil.rmtree(delete_file_name)  # Delete directory
+                else:
+                    os.remove(delete_file_name)  # Delete file
 
-            orbit_render(filename)  # Import and normalise size of the model
+        orbit_render(filename)  # Import and normalise size of the model
+        shutil.copy("project.blend", output_dir)
+        print(f"Saved blender project file at {output_dir}")
 
+        if opt.render:
             # Clear and create render directory (where files are stored at the end)
-            if not os.path.exists(render_dir):
-                os.mkdir(render_dir)
 
-            cmd = f"blender -b project.blend -o `pwd`/output/{render_folder_name}/### -s {last_rendered_index + 1} -a"
-
-            for line in execute(["blender", "-b", "project.blend", "-o", f"{os.path.join(os.getcwd(), 'output/', render_folder_name)}/###",
-                                 "-s", str(last_rendered_index + 1), "-a"]):
-                print(line, end='')
+            for line in execute([str(opt.blender), "-b", "project.blend",
+                                 "-E", ["BLENDER_EEVEE", "CYCLES"][opt.cycles],
+                                 "--python", "use_gpu.py", "-o",
+                                 f"{os.path.join(os.getcwd(), output_dir)}/###",
+                                 "-s", "1", "-e", "5", "-a"]):
+                try:
+                    print(line, end='')
+                except:
+                    print("Encoding error :\\")
 
             print(' ---- ' * 10)
-
-        break  # Non-recursive
