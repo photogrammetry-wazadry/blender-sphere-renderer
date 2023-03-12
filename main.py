@@ -8,6 +8,7 @@ import subprocess
 import argparse
 import math
 import random
+import json
 
 
 MAX_DIMENSION = 12
@@ -151,7 +152,7 @@ def orbit_render(file_name, output_file='project.blend'):
         for i in range(3):
             camera.location[i] += random.uniform(-1, 1) * distance_from_center * random_factor
 
-        frame_positions.append(camera.location)
+        frame_positions.append([camera.location[0], camera.location[1], camera.location[2]])
         camera.keyframe_insert(data_path="location", frame=frame)  # Add keyframe
 
         # Update indexes
@@ -163,6 +164,10 @@ def orbit_render(file_name, output_file='project.blend'):
 
     # Save project
     bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(output_file))
+
+    # Save camera coordinates to file
+    with open("cameras.json", "w") as f:
+        f.write(json.dumps(frame_positions))
 
 
 if __name__ == '__main__':
