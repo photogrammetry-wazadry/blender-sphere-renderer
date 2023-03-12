@@ -6,6 +6,8 @@ from pathlib import Path, PurePath
 import bmesh
 import subprocess
 import argparse
+import math
+import random
 
 
 MAX_DIMENSION = 12
@@ -119,6 +121,45 @@ def orbit_render(file_name, output_file='project.blend'):
         bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
         obj.location = (0, 0, 0)
     bpy.context.scene.cursor.location = (0, 0, 0)
+
+    scene = bpy.data.scenes['Scene']
+    frame_positions = []
+    scene.frame_current = scene.frame_end
+    bpy.ops.ptcache.bake_all(bake=False)
+
+    camera = bpy.data.objects['Camera']
+
+    # Iterate over all frames
+    steps_on_each_axis = int(scene.frame_end ** 0.5)
+    delta1, delta2 = 360 / steps_on_each_axis, 180 / steps_on_each_axis
+    distance_from_center = 23
+    random_factor = 0.05  # Fraction of `distance_from_center`
+
+    ax1, ax2 = 0, -1 * steps_on_each_axis / 2
+
+    for frame in range(scene.frame_end):
+        scene.frame_current = frame
+
+        a1 = delta1 * ax1
+        a2 = delta2 * ax2
+
+        distance2 = distance_from_center * math.cos(a2 * math.pi / 180)
+        camera.location = (distance2 * math.sin(a1 * math.pi / 180),
+                           distance2 * math.cos(a1 * math.pi / 180),
+                           distance_from_center * math.sin(a2 * math.pi / 180))
+
+        for i in range(3):
+            camera.location[i] += random.uniform(-1, 1) * distance_from_center * random_factor
+
+        frame_positions.append(camera.location)
+        camera.keyframe_insert(data_path="location", frame=frame)  # Add keyframe
+
+        # Update indexes
+        ax1 += 1
+        if ax1 >= steps_on_each_axis:
+            ax1 = 0
+            ax2 += 1
+
 
     # Save project
     bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(output_file))
