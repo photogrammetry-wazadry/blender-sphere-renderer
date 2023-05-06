@@ -47,15 +47,13 @@ def execute(cmd):
 
 
 def orbit_render(file_name, prefix_path, output_file='project.blend'):
+    prefix_path = os.path.abspath(prefix_path)
     temp_path = os.path.join(prefix_path, 'temp')
 
     input_path = Path(os.path.join(prefix_path, 'input', file_name))
     extract_path = Path(os.path.join(temp_path, file_name))
 
     # Clear working directory
-    print(f"rm -rf {os.path.join(prefix_path, 'temp/*')}")
-    print(f"cp -r {input_path} {os.path.join(prefix_path, 'temp')}")
-
     os.system(f"rm -rf {os.path.join(prefix_path, 'temp/*')}")
     os.system(f"cp -r {input_path} {os.path.join(prefix_path, 'temp')}")
 
@@ -63,12 +61,11 @@ def orbit_render(file_name, prefix_path, output_file='project.blend'):
     unzip_recursively(extract_path, temp_path)
     print("Unzip successful", flush=True)
 
-    bpy.ops.wm.open_mainfile(filepath=os.path.join(prefix_path, "template.blend"))  # Open template project (moving camera and lights)
+    bpy.ops.wm.open_mainfile(filepath="template.blend")  # Open template project
     system_objects = []
     for name in bpy.context.scene.objects:  # Save all object names from template
         system_objects.append(name.name)
 
-    print("here", temp_path, flush=True)
     for root, _, files in os.walk(temp_path):
         for filename in files:
             if Path(filename).suffix == ".obj":
@@ -108,7 +105,7 @@ def orbit_render(file_name, prefix_path, output_file='project.blend'):
     print(f"Model max scale: {max_scale}, scaling to {scale_factor}x to normalise size\n")
 
     bpy.ops.transform.resize(value=(scale_factor, scale_factor, scale_factor))  # Resize
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)  # Apple transforms to all objects
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)  # Apply transforms to all objects
 
     # Bounding box
     bound_box_max, bound_box_min = [-1e7, -1e7, -1e7], [1e7, 1e7, 1e7]
@@ -182,21 +179,23 @@ if __name__ == '__main__':
     parser.add_argument("-r", "--render", help="Render images for every project file", action='store_true')
     parser.add_argument("-c", "--cycles", help="Render project in CYCLES (EEVEE by default)", action='store_true')
     parser.add_argument("-b", "--blender", required=False, help="Blender call path/command", default="blender")
+    parser.add_argument("-p", "--path", required=False, help="Path to output folder", default="./")
     opt = parser.parse_args()
 
     # Check needed directories
-    if not os.path.exists("input/"):
+    if not os.path.exists(os.path.join(opt.path, "input/")):
         print("No input/ directory with 3D models found. Exiting")
         exit(0)
 
     needed_dirs = ["output/", "temp/"]
     for needed_dir in needed_dirs:
+        needed_dir = os.path.join(opt.path, needed_dir)
         if not os.path.exists(needed_dir):
             os.mkdir(needed_dir)
 
-    for model_index, filename in enumerate(os.listdir("input/")):
+    for model_index, filename in enumerate(os.listdir(os.path.join(opt.path, "input/"))):
         output_folder_name = f"{str(model_index).zfill(3)}_{os.path.splitext(filename)[0]}"
-        output_dir = os.path.join("output/", output_folder_name)
+        output_dir = os.path.join(opt.path, "output/", output_folder_name)
 
         if not os.path.exists(output_dir):  # Create output_dir
             os.mkdir(output_dir)
@@ -207,14 +206,14 @@ if __name__ == '__main__':
                 else:
                     os.remove(delete_file_name)  # Delete file
 
-        orbit_render(filename)  # Import and normalise size of the model
-        shutil.copy("project.blend", output_dir)
+        orbit_render(filename, prefix_path=opt.path)  # Import and normalise size of the model
+        shutil.copy(os.path.join(opt.path, "project.blend"), output_dir)
         print(f"Saved blender project file at {output_dir}")
 
         if opt.render:
             # Clear and create render directory (where files are stored at the end)
 
-            for line in execute([str(opt.blender), "-b", "project.blend",
+            for line in execute([str(opt.blender), "-b", os.path.join(opt.path, "project.blend"),
                                  "-E", ["BLENDER_EEVEE", "CYCLES"][opt.cycles],
                                  "--python", "use_gpu.py", "-o",
                                  f"{os.path.join(os.getcwd(), output_dir)}/###",
