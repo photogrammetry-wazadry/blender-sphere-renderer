@@ -22,17 +22,18 @@ def join_path_parts(path_parts):
     return ans
 
 
-def unzip_recursively(zip_path):  # Unzip main archive if one exists
+def unzip_recursively(zip_path, temp_path):  # Unzip main archive if one exists
     if zip_path.suffix == ".zip":
         split_path = PurePath(zip_path).parts
-        extract_dir = os.path.join('./temp/', join_path_parts(split_path[1:-1]))
+        temp_path_depth = len(PurePath(temp_path).parts)
+        extract_dir = os.path.join(temp_path, join_path_parts(split_path[temp_path_depth:-1]))
 
         os.system(f"unzip {zip_path} -d {extract_dir}")  # Unzip archive
         os.remove(zip_path)
 
         for root, dirs, files in os.walk(join_path_parts(split_path[:-1])):
             for filename in files:
-                unzip_recursively(Path(os.path.join(root, filename)))
+                unzip_recursively(Path(os.path.join(root, filename)), temp_path)
 
 
 def execute(cmd):
@@ -45,25 +46,30 @@ def execute(cmd):
         raise subprocess.CalledProcessError(return_code, cmd)
 
 
-def orbit_render(file_name, output_file='project.blend'):
-    print(file_name, output_file)
-    input_path = Path(os.path.join('./input', file_name))
-    extract_path = Path(os.path.join('./temp', file_name))
+def orbit_render(file_name, prefix_path, output_file='project.blend'):
+    temp_path = os.path.join(prefix_path, 'temp')
+
+    input_path = Path(os.path.join(prefix_path, 'input', file_name))
+    extract_path = Path(os.path.join(temp_path, file_name))
 
     # Clear working directory
-    os.system("rm -rf ./temp/*")
-    os.system(f"cp -r {input_path} ./temp")
+    print(f"rm -rf {os.path.join(prefix_path, 'temp/*')}")
+    print(f"cp -r {input_path} {os.path.join(prefix_path, 'temp')}")
 
-    print("Starting unzip")
-    unzip_recursively(extract_path)
-    print("Unzip successful")
+    os.system(f"rm -rf {os.path.join(prefix_path, 'temp/*')}")
+    os.system(f"cp -r {input_path} {os.path.join(prefix_path, 'temp')}")
 
-    bpy.ops.wm.open_mainfile(filepath="template.blend")  # Open template project (moving camera and lights)
+    print("Starting unzip", flush=True)
+    unzip_recursively(extract_path, temp_path)
+    print("Unzip successful", flush=True)
+
+    bpy.ops.wm.open_mainfile(filepath=os.path.join(prefix_path, "template.blend"))  # Open template project (moving camera and lights)
     system_objects = []
     for name in bpy.context.scene.objects:  # Save all object names from template
         system_objects.append(name.name)
 
-    for root, _, files in os.walk("./temp"):
+    print("here", temp_path, flush=True)
+    for root, _, files in os.walk(temp_path):
         for filename in files:
             if Path(filename).suffix == ".obj":
                 bpy.ops.import_scene.obj(filepath=os.path.join(root, filename), filter_glob="*.obj;*.mtl",
@@ -73,6 +79,7 @@ def orbit_render(file_name, output_file='project.blend'):
                                          global_clamp_size=0, axis_forward='-Z', axis_up='Y')
 
             if Path(filename).suffix in [".glb", ".gltf"]:
+                print(os.path.join(root, filename), flush=True)
                 bpy.ops.import_scene.gltf(filepath=os.path.join(root, filename), filter_glob='*.glb;*.gltf',
                                           loglevel=0, import_pack_images=True, merge_vertices=False,
                                           import_shading='NORMALS', bone_heuristic='TEMPERANCE',
@@ -163,10 +170,10 @@ def orbit_render(file_name, output_file='project.blend'):
 
 
     # Save project
-    bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(output_file))
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(prefix_path, output_file))
 
     # Save camera coordinates to file
-    with open("cameras.json", "w") as f:
+    with open(os.path.join(prefix_path, "cameras.json"), "w") as f:
         f.write(json.dumps(frame_positions))
 
 
