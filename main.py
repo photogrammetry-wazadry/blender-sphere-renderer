@@ -61,7 +61,8 @@ def orbit_render(file_name, prefix_path, output_file='project.blend'):
     unzip_recursively(extract_path, temp_path)
     print("Unzip successful", flush=True)
 
-    bpy.ops.wm.open_mainfile(filepath="template.blend")  # Open template project
+    # Open template project. template.blend has to start with `prefix_path`, otherwise import fails
+    bpy.ops.wm.open_mainfile(filepath=os.path.join(prefix_path, "template.blend"))
     system_objects = []
     for name in bpy.context.scene.objects:  # Save all object names from template
         system_objects.append(name.name)
