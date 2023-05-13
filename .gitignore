@@ -136,3 +136,6 @@ output/*
 render/*
 input/*
 temp/*
+
+cameras.json
+
