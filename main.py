@@ -11,7 +11,45 @@ import random
 import json
 
 
-MAX_DIMENSION = 12
+MAX_DIMENSION = 8
+
+
+class Vector():
+    def __init__(self, x, y, z):
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def len(self):
+        return math.hypot(self.x, self.y, self.z)
+
+    def norm(self):
+        return Vector(self.x / self.len(), self.y / self.len(), self.z / self.len())
+
+
+"""
+class Vector(object):
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def __abs__(self):
+        return math.hypot(self.x, self.y)
+
+    def norm(self):
+        return Vector(self.x / len(self), self.y / len(self))
+
+    def dp(other):
+        return x * other.x + y * other.y
+
+    def cp(other):
+        return x * other.y + y * other.x
+
+    def angle(other):
+        a = math.atan2(self.cp(other), self.dp(other))
+        if a >= 0 return a
+        return a + 2 * math.pi
+"""
 
 
 def join_path_parts(path_parts):
@@ -135,15 +173,17 @@ def orbit_render(file_name, prefix_path, output_file='project.blend'):
 
     camera = bpy.data.objects['Camera']
 
+    total_frames = 500
+
     # Iterate over all frames
-    steps_on_each_axis = int(scene.frame_end ** 0.5)
+    steps_on_each_axis = int(total_frames ** 0.5)
     delta1, delta2 = 360 / steps_on_each_axis, 180 / steps_on_each_axis
     distance_from_center = 23
     random_factor = 0.05  # Fraction of `distance_from_center`
 
     ax1, ax2 = 0, -1 * steps_on_each_axis / 2
 
-    for frame in range(scene.frame_end):
+    for frame in range(total_frames):
         scene.frame_current = frame
 
         a1 = delta1 * ax1
@@ -154,10 +194,19 @@ def orbit_render(file_name, prefix_path, output_file='project.blend'):
                            distance2 * math.cos(a1 * math.pi / 180),
                            distance_from_center * math.sin(a2 * math.pi / 180))
 
-        for i in range(3):
-            camera.location[i] += random.uniform(-1, 1) * distance_from_center * random_factor
+        # for i in range(3):
+        #     camera.location[i] += random.uniform(-1, 1) * distance_from_center * random_factor
 
-        frame_positions.append([camera.location[0], camera.location[1], camera.location[2]])
+        V = Vector(-camera.location[0], -camera.location[1], -camera.location[2]).norm()
+
+        # angle1, angle2, angle3 = math.atan2(V.x, V.z) * 180 / math.pi, math.asin(-V.y) * 180 / math.pi, 0
+        angle1, angle2, angle3 = math.atan2(V.x, V.z) * 180 / math.pi,  math.atan2(V.x, V.y) * 180 / math.pi,  math.atan2(V.y, V.z) * 180 / math.pi
+        # angle1 = math.atan2(camera.location[0], camera.location[1]) * 180 / math.pi
+        # angle2 = math.atan2(camera.location[1], camera.location[2]) * 180 / math.pi
+        # angle3 = math.atan2(camera.location[2], camera.location[0]) * 180 / math.pi
+
+        # frame_positions.append([camera.location[0], camera.location[1], camera.location[2], angle1, angle2, angle3])  # All the given angles are in degrees
+        frame_positions.append([camera.location[0], camera.location[1], camera.location[2], a1, a2, 0])  # All the given angles are in degrees
         camera.keyframe_insert(data_path="location", frame=frame)  # Add keyframe
 
         # Update indexes
