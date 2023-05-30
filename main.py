@@ -27,30 +27,6 @@ class Vector():
         return Vector(self.x / self.len(), self.y / self.len(), self.z / self.len())
 
 
-"""
-class Vector(object):
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-
-    def __abs__(self):
-        return math.hypot(self.x, self.y)
-
-    def norm(self):
-        return Vector(self.x / len(self), self.y / len(self))
-
-    def dp(other):
-        return x * other.x + y * other.y
-
-    def cp(other):
-        return x * other.y + y * other.x
-
-    def angle(other):
-        a = math.atan2(self.cp(other), self.dp(other))
-        if a >= 0 return a
-        return a + 2 * math.pi
-"""
-
 
 def join_path_parts(path_parts):
     ans = ""
@@ -197,15 +173,15 @@ def orbit_render(file_name, prefix_path, output_file='project.blend'):
         # for i in range(3):
         #     camera.location[i] += random.uniform(-1, 1) * distance_from_center * random_factor
 
-        V = Vector(-camera.location[0], -camera.location[1], -camera.location[2]).norm()
+        # V = Vector(-camera.location[0], -camera.location[1], -camera.location[2]).norm()
 
-        # angle1, angle2, angle3 = math.atan2(V.x, V.z) * 180 / math.pi, math.asin(-V.y) * 180 / math.pi, 0
-        angle1, angle2, angle3 = math.atan2(V.x, V.z) * 180 / math.pi,  math.atan2(V.x, V.y) * 180 / math.pi,  math.atan2(V.y, V.z) * 180 / math.pi
-        # angle1 = math.atan2(camera.location[0], camera.location[1]) * 180 / math.pi
-        # angle2 = math.atan2(camera.location[1], camera.location[2]) * 180 / math.pi
-        # angle3 = math.atan2(camera.location[2], camera.location[0]) * 180 / math.pi
+        angle1 = math.atan2(camera.location[0], camera.location[1]) * 180 / math.pi
+        #while angle1 < 0:
+            #angle1 += 360
 
-        # frame_positions.append([camera.location[0], camera.location[1], camera.location[2], angle1, angle2, angle3])  # All the given angles are in degrees
+        hyp = math.sqrt(camera.location[0] ** 2 + camera.location[1] ** 2)
+        angle2 = math.atan2(hyp, camera.location[2]) * 180 / math.pi + 90
+
         frame_positions.append([camera.location[0], camera.location[1], camera.location[2], a1, a2, 0])  # All the given angles are in degrees
         camera.keyframe_insert(data_path="location", frame=frame)  # Add keyframe
 
