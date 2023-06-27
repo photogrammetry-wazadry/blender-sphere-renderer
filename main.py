@@ -11,7 +11,7 @@ import random
 import json
 
 
-MAX_DIMENSION = 8
+MAX_DIMENSION = 7
 
 
 class Vector():
@@ -60,28 +60,28 @@ def execute(cmd):
         raise subprocess.CalledProcessError(return_code, cmd)
 
 
-def orbit_render(file_name, prefix_path, output_file='project.blend'):
+def orbit_render(file_name, prefix_path, template_path, total_frames, output_file='project.blend'):
+    total_frames = int(total_frames)
     prefix_path = os.path.abspath(prefix_path)
-    temp_path = os.path.join(prefix_path, 'temp')
+    source_path = os.path.join(prefix_path, 'source')
 
-    input_path = Path(os.path.join(prefix_path, 'input', file_name))
-    extract_path = Path(os.path.join(temp_path, file_name))
+    #input_path = Path(os.path.join(prefix_path, 'input', file_name))
 
     # Clear working directory
-    os.system(f"rm -rf {os.path.join(prefix_path, 'temp/*')}")
-    os.system(f"cp -r {input_path} {os.path.join(prefix_path, 'temp')}")
+    #os.system(f"rm -rf {os.path.join(prefix_path, 'temp/*')}")
+    #os.system(f"cp -r {input_path} {os.path.join(prefix_path, 'temp')}")
 
     print("Starting unzip", flush=True)
-    unzip_recursively(extract_path, temp_path)
+    unzip_recursively(Path(os.path.join(source_path, file_name)), source_path)
     print("Unzip successful", flush=True)
 
     # Open template project. template.blend has to start with `prefix_path`, otherwise import fails
-    bpy.ops.wm.open_mainfile(filepath=os.path.join(prefix_path, "template.blend"))
+    bpy.ops.wm.open_mainfile(filepath=template_path)
     system_objects = []
     for name in bpy.context.scene.objects:  # Save all object names from template
         system_objects.append(name.name)
 
-    for root, _, files in os.walk(temp_path):
+    for root, _, files in os.walk(source_path):
         for filename in files:
             if Path(filename).suffix == ".obj":
                 bpy.ops.import_scene.obj(filepath=os.path.join(root, filename), filter_glob="*.obj;*.mtl",
@@ -148,8 +148,7 @@ def orbit_render(file_name, prefix_path, output_file='project.blend'):
     bpy.ops.ptcache.bake_all(bake=False)
 
     camera = bpy.data.objects['Camera']
-
-    total_frames = 500
+    #camera.rotation_mode = 'XYZ'
 
     # Iterate over all frames
     steps_on_each_axis = int(total_frames ** 0.5)
@@ -170,20 +169,26 @@ def orbit_render(file_name, prefix_path, output_file='project.blend'):
                            distance2 * math.cos(a1 * math.pi / 180),
                            distance_from_center * math.sin(a2 * math.pi / 180))
 
+        # Add random jitter to camera positions
         # for i in range(3):
         #     camera.location[i] += random.uniform(-1, 1) * distance_from_center * random_factor
 
-        # V = Vector(-camera.location[0], -camera.location[1], -camera.location[2]).norm()
-
         angle1 = math.atan2(camera.location[0], camera.location[1]) * 180 / math.pi
-        #while angle1 < 0:
-            #angle1 += 360
 
         hyp = math.sqrt(camera.location[0] ** 2 + camera.location[1] ** 2)
         angle2 = math.atan2(hyp, camera.location[2]) * 180 / math.pi + 90
 
         frame_positions.append([camera.location[0], camera.location[1], camera.location[2], a1, a2, 0])  # All the given angles are in degrees
+
+        #scene.camera.rotation_euler[0] = (a2 - 90) * (math.pi / 180.0)
+        #scene.camera.rotation_euler[1] = 0#a2 * (math.pi / 180.0)
+        #scene.camera.rotation_euler[2] = a1 * (math.pi / 180.0)
+
         camera.keyframe_insert(data_path="location", frame=frame)  # Add keyframe
+        #if camera.rotation_mode == "QUATERNION":
+        #    camera.keyframe_insert(data_path = 'rotation_quaternion')
+        #else:
+        #    camera.keyframe_insert(data_path = 'rotation_euler')
 
         # Update indexes
         ax1 += 1
@@ -232,14 +237,18 @@ if __name__ == '__main__':
                 else:
                     os.remove(delete_file_name)  # Delete file
 
-        orbit_render(filename, prefix_path=opt.path)  # Import and normalise size of the model
-        shutil.copy(os.path.join(opt.path, "project.blend"), output_dir)
+
+        os.mkdir(os.path.join(output_dir, "source"))
+        shutil.copy(os.path.join("input/", filename), os.path.join(output_dir, "source"))  # Copy model to output folder
+
+        orbit_render(filename, prefix_path=os.path.join(opt.path, "output/", output_folder_name), template_path="template.blend", total_frames=300)  # Import and normalise size of the model
+        #shutil.copy(os.path.join(opt.path, "project.blend"), output_dir)
         print(f"Saved blender project file at {output_dir}")
 
         if opt.render:
             # Clear and create render directory (where files are stored at the end)
 
-            for line in execute([str(opt.blender), "-b", os.path.join(opt.path, "project.blend"),
+            for line in execute([str(opt.blender), "-b", os.path.join(opt.path, "output/", output_folder_name, "project.blend"),
                                  "-E", ["BLENDER_EEVEE", "CYCLES"][opt.cycles],
                                  "--python", "use_gpu.py", "-o",
                                  f"{os.path.join(os.getcwd(), output_dir)}/###",
