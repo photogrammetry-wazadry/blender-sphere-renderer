@@ -65,12 +65,6 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, output_fil
     prefix_path = os.path.abspath(prefix_path)
     source_path = os.path.join(prefix_path, 'source')
 
-    #input_path = Path(os.path.join(prefix_path, 'input', file_name))
-
-    # Clear working directory
-    #os.system(f"rm -rf {os.path.join(prefix_path, 'temp/*')}")
-    #os.system(f"cp -r {input_path} {os.path.join(prefix_path, 'temp')}")
-
     print("Starting unzip", flush=True)
     unzip_recursively(Path(os.path.join(source_path, file_name)), source_path)
     print("Unzip successful", flush=True)
@@ -196,6 +190,15 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, output_fil
             ax1 = 0
             ax2 += 1
 
+    # Turn off metalic value for all materials (they interfere with photogrammetry)
+    for mat in bpy.data.materials:
+        if not mat.use_nodes:
+            mat.metallic = 1
+            continue
+        for n in mat.node_tree.nodes:
+            if n.type == 'BSDF_PRINCIPLED':
+                n.inputs["Metallic"].default_value = 0
+                n.inputs["Roughness"].default_value = 0.8  # Still not perfect
 
     # Save project
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(prefix_path, output_file))
