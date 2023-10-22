@@ -85,7 +85,7 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, output_fil
                                          global_clamp_size=0, axis_forward='-Z', axis_up='Y')
 
             if Path(filename).suffix in [".glb", ".gltf"]:
-                print(os.path.join(root, filename), flush=True)
+                print("GLTF path", root, filename, flush=True)
                 bpy.ops.import_scene.gltf(filepath=os.path.join(root, filename), filter_glob='*.glb;*.gltf',
                                           loglevel=0, import_pack_images=True, merge_vertices=False,
                                           import_shading='NORMALS', bone_heuristic='TEMPERANCE',
@@ -101,6 +101,7 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, output_fil
                                          automatic_bone_orientation=False, primary_bone_axis='Y',
                                          secondary_bone_axis='X', use_prepost_rot=True, axis_forward='-Z', axis_up='Y')
 
+    print("Model imported")
     all_objects = bpy.context.scene.objects  # Get all objects
     new_objects = [all_objects[i] for i, elem in enumerate(all_objects) if elem.name not in system_objects]
 
@@ -221,6 +222,11 @@ if __name__ == '__main__':
         print("No input/ directory with 3D models found. Exiting")
         exit(0)
 
+    template_path = os.path.join(opt.path, "template.blend")
+    if not os.path.isfile(template_path):
+        shutil.copy("template.blend", template_path)
+        print("No blender template file found, copying")
+
     needed_dirs = ["output/", "temp/"]
     for needed_dir in needed_dirs:
         needed_dir = os.path.join(opt.path, needed_dir)
@@ -242,10 +248,9 @@ if __name__ == '__main__':
 
 
         os.mkdir(os.path.join(output_dir, "source"))
-        shutil.copy(os.path.join("input/", filename), os.path.join(output_dir, "source"))  # Copy model to output folder
+        shutil.copy(os.path.join(opt.path, "input/", filename), os.path.join(output_dir, "source"))  # Copy model to output folder
 
-        orbit_render(filename, prefix_path=os.path.join(opt.path, "output/", output_folder_name), template_path="template.blend", total_frames=300)  # Import and normalise size of the model
-        #shutil.copy(os.path.join(opt.path, "project.blend"), output_dir)
+        orbit_render(filename, prefix_path=os.path.join(opt.path, "output/", output_folder_name), template_path=os.path.join(opt.path, "template.blend"), total_frames=300)  # Import and normalise size of the model
         print(f"Saved blender project file at {output_dir}")
 
         if opt.render:
