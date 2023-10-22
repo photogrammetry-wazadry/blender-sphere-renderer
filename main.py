@@ -102,11 +102,13 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, output_fil
                                          secondary_bone_axis='X', use_prepost_rot=True, axis_forward='-Z', axis_up='Y')
 
     print("Model imported")
+
     all_objects = bpy.context.scene.objects  # Get all objects
     new_objects = [all_objects[i] for i, elem in enumerate(all_objects) if elem.name not in system_objects]
 
     max_scale = -1000
     for obj in new_objects:  # Calculate max size of all objects
+        obj.animation_data_clear()
         obj.select_set(True)
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         max_scale = max(max_scale, max(obj.dimensions))
