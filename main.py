@@ -2,6 +2,7 @@ import os
 from glob import glob
 import bpy
 import shutil
+from zipfile import ZipFile
 from pathlib import Path, PurePath
 import bmesh
 import subprocess
@@ -42,7 +43,8 @@ def unzip_recursively(zip_path, temp_path):  # Unzip main archive if one exists
         temp_path_depth = len(PurePath(temp_path).parts)
         extract_dir = os.path.join(temp_path, join_path_parts(split_path[temp_path_depth:-1]))
 
-        os.system(f"unzip {zip_path} -d {extract_dir}")  # Unzip archive
+        with ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_dir)
         os.remove(zip_path)
 
         for root, dirs, files in os.walk(join_path_parts(split_path[:-1])):
@@ -145,7 +147,17 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, output_fil
     bpy.ops.ptcache.bake_all(bake=False)
 
     camera = bpy.data.objects['Camera']
-    #camera.rotation_mode = 'XYZ'
+
+    # Turn off metalic value for all materials (they interfere with photogrammetry)
+    for mat in bpy.data.materials:
+        if not mat.use_nodes:
+            mat.metallic = 1
+            continue
+        for n in mat.node_tree.nodes:
+            if n.type == 'BSDF_PRINCIPLED':
+                n.inputs["Metallic"].default_value = 0
+                n.inputs["Roughness"].default_value = 1
+
 
     # Iterate over all frames
     steps_on_each_axis = int(total_frames ** 0.5)
@@ -176,16 +188,7 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, output_fil
         angle2 = math.atan2(hyp, camera.location[2]) * 180 / math.pi + 90
 
         frame_positions.append([camera.location[0], camera.location[1], camera.location[2], a1, a2, 0])  # All the given angles are in degrees
-
-        #scene.camera.rotation_euler[0] = (a2 - 90) * (math.pi / 180.0)
-        #scene.camera.rotation_euler[1] = 0#a2 * (math.pi / 180.0)
-        #scene.camera.rotation_euler[2] = a1 * (math.pi / 180.0)
-
         camera.keyframe_insert(data_path="location", frame=frame)  # Add keyframe
-        #if camera.rotation_mode == "QUATERNION":
-        #    camera.keyframe_insert(data_path = 'rotation_quaternion')
-        #else:
-        #    camera.keyframe_insert(data_path = 'rotation_euler')
 
         # Update indexes
         ax1 += 1
@@ -193,18 +196,39 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, output_fil
             ax1 = 0
             ax2 += 1
 
-    # Turn off metalic value for all materials (they interfere with photogrammetry)
-    for mat in bpy.data.materials:
-        if not mat.use_nodes:
-            mat.metallic = 1
-            continue
-        for n in mat.node_tree.nodes:
-            if n.type == 'BSDF_PRINCIPLED':
-                n.inputs["Metallic"].default_value = 0
-                n.inputs["Roughness"].default_value = 0.8  # Still not perfect
+    if Path(output_file).suffix == ".blend":  # CYCLES render mode
+        # Save project
+        project_file = os.path.join(prefix_path, output_file)
+        bpy.ops.wm.save_as_mainfile(filepath=project_file)
+        with ZipFile(os.path.join(prefix_path, "project.zip"), "w") as file:
+            file.write(project_file, output_file)
 
-    # Save project
-    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(prefix_path, output_file))
+    elif Path(output_file).suffix == ".obj":  # PYTORCH3D render mode
+        # Export 3D model
+        # bpy.ops.export_scene.gltf(filepath=os.path.join(prefix_path, output_file),
+        #     export_format='GLB',
+            # export_format='GLTF_EMBEDDED',
+        #     use_active_collection =True
+        # )
+
+        bpy.ops.export_scene.obj(filepath=os.path.join(prefix_path, output_file),
+                     check_existing=True, filter_glob='*.obj;*.mtl', use_selection=False,
+                     use_animation=False, use_mesh_modifiers=True,
+                     use_edges=True, use_smooth_groups=False, use_smooth_groups_bitflags=False,
+                     use_normals=True, use_uvs=True,
+                     use_materials=True, use_triangles=False, use_nurbs=False, use_vertex_groups=False,
+                     use_blen_objects=True,
+                     group_by_object=False, group_by_material=False, keep_vertex_order=False,
+                     global_scale=1.0, path_mode='AUTO', axis_forward='-Z', axis_up='Y')
+
+        with ZipFile(os.path.join(prefix_path, "project.zip"), "w") as file:
+            file.write(os.path.join(prefix_path, output_file), output_file)
+            file.write(os.path.join(prefix_path, Path(output_file).stem + ".mtl"), Path(output_file).stem + ".mtl")
+            # file.write(os.path.join(prefix_path, output_file), output_file)
+            for directory, folders, files in os.walk(os.path.join(prefix_path, "source/textures")):
+                for filename in files:
+                    file.write(os.path.join(directory, filename), os.path.join("source/textures", filename))
+
 
     # Save camera coordinates to file
     with open(os.path.join(prefix_path, "cameras.json"), "w") as f:
