@@ -62,7 +62,7 @@ def execute(cmd):
         raise subprocess.CalledProcessError(return_code, cmd)
 
 
-def orbit_render(file_name, prefix_path, template_path, total_frames, output_file='project.blend'):
+def orbit_render(file_name, prefix_path, template_path, total_frames, cycles_samples=128, render_resolution=3840, light_type="soft", output_file='project.blend'):
     total_frames = int(total_frames)
     prefix_path = os.path.abspath(prefix_path)
     source_path = os.path.join(prefix_path, 'source')
@@ -147,6 +147,9 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, output_fil
     bpy.ops.ptcache.bake_all(bake=False)
 
     camera = bpy.data.objects['Camera']
+    bpy.context.scene.render.resolution_x = render_resolution
+    bpy.context.scene.render.resolution_y = render_resolution
+    bpy.context.scene.cycles.samples = cycles_samples
 
     # Turn off metalic value for all materials (they interfere with photogrammetry)
     for mat in bpy.data.materials:
@@ -205,12 +208,6 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, output_fil
 
     elif Path(output_file).suffix == ".obj":  # PYTORCH3D render mode
         # Export 3D model
-        # bpy.ops.export_scene.gltf(filepath=os.path.join(prefix_path, output_file),
-        #     export_format='GLB',
-            # export_format='GLTF_EMBEDDED',
-        #     use_active_collection =True
-        # )
-
         bpy.ops.export_scene.obj(filepath=os.path.join(prefix_path, output_file),
                      check_existing=True, filter_glob='*.obj;*.mtl', use_selection=False,
                      use_animation=False, use_mesh_modifiers=True,
@@ -221,13 +218,13 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, output_fil
                      group_by_object=False, group_by_material=False, keep_vertex_order=False,
                      global_scale=1.0, path_mode='AUTO', axis_forward='-Z', axis_up='Y')
 
-        with ZipFile(os.path.join(prefix_path, "project.zip"), "w") as file:
-            file.write(os.path.join(prefix_path, output_file), output_file)
-            file.write(os.path.join(prefix_path, Path(output_file).stem + ".mtl"), Path(output_file).stem + ".mtl")
-            # file.write(os.path.join(prefix_path, output_file), output_file)
+        with ZipFile(os.path.join(prefix_path, "project.zip"), "w") as zip_file:
+            obj_path = os.path.join(prefix_path, output_file)
+            zip_file.write(obj_path, output_file)  # project.obj
+            zip_file.write(os.path.join(prefix_path, Path(output_file).stem + ".mtl"), Path(output_file).stem + ".mtl")  # project.mtl
             for directory, folders, files in os.walk(os.path.join(prefix_path, "source/textures")):
                 for filename in files:
-                    file.write(os.path.join(directory, filename), os.path.join("source/textures", filename))
+                    zip_file.write(os.path.join(directory, filename), os.path.join("source/textures", filename))
 
 
     # Save camera coordinates to file
