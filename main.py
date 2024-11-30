@@ -62,6 +62,179 @@ def execute(cmd):
         raise subprocess.CalledProcessError(return_code, cmd)
 
 
+def bake_normals_in(file_path, prefix_path, template_path):
+    file_path = Path(file_path)
+    source_path = os.path.join(prefix_path, 'source')  # Temp path that zip will be extracted to and then loaded to bpy
+
+
+    if file_path.suffix == ".zip":
+        # Move from input to source dir to extract
+        shutil.rmtree(source_path)  # Delete directory
+        os.mkdir(source_path)
+        shutil.copy(file_path, source_path)  # Copy model to output folder
+        file_path = Path(os.path.join(source_path, file_path.parts[-1]))
+        print(file_path)
+
+        print("Starting unzip", flush=True)
+        unzip_recursively(file_path, source_path)
+        print("Unzip successful", flush=True)
+
+
+    if file_path.suffix == ".blend":
+        bpy.ops.wm.open_mainfile(filepath=file_path)
+    
+
+    if file_path.suffix in [".zip", ".gltf"]:
+        # Open template project. template.blend has to start with `prefix_path`, otherwise import fails
+        bpy.ops.wm.open_mainfile(filepath=template_path)
+        system_objects = []
+        for name in bpy.context.scene.objects:  # Save all object names from template
+            system_objects.append(name.name)
+
+        for root, _, files in os.walk(source_path):
+            for filename in files:
+                if Path(filename).suffix == ".obj":
+                    bpy.ops.import_scene.obj(filepath=os.path.join(root, filename), filter_glob="*.obj;*.mtl",
+                                             use_edges=True, use_smooth_groups=True, use_split_objects=True,
+                                             use_split_groups=True,
+                                             use_groups_as_vgroups=False, use_image_search=True, split_mode='ON',
+                                             global_clamp_size=0, axis_forward='-Z', axis_up='Y')
+
+                if Path(filename).suffix in [".glb", ".gltf"]:
+                    print("GLTF path", root, filename, flush=True)
+                    bpy.ops.import_scene.gltf(filepath=os.path.join(root, filename), filter_glob='*.glb;*.gltf',
+                                              loglevel=0, import_pack_images=True, merge_vertices=False,
+                                              import_shading='NORMALS', bone_heuristic='TEMPERANCE',
+                                              guess_original_bind_pose=True)
+
+                if Path(filename).suffix == ".fbx":
+                    bpy.ops.import_scene.fbx(filepath=os.path.join(root, filename), directory=root, filter_glob='*.fbx',
+                                             ui_tab='MAIN', use_manual_orientation=False, global_scale=1.0,
+                                             bake_space_transform=False, use_custom_normals=True, use_image_search=True,
+                                             use_alpha_decals=False, decal_offset=0.0, use_anim=True, anim_offset=1.0,
+                                             use_subsurf=False, use_custom_props=True, use_custom_props_enum_as_string=True,
+                                             ignore_leaf_bones=False, force_connect_children=False,
+                                             automatic_bone_orientation=False, primary_bone_axis='Y',
+                                             secondary_bone_axis='X', use_prepost_rot=True, axis_forward='-Z', axis_up='Y')
+
+        print("Model imported")
+
+        all_objects = bpy.context.scene.objects  # Get all objects
+        new_objects = [all_objects[i] for i, elem in enumerate(all_objects) if elem.name not in system_objects]
+
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in new_objects:  # Select mesh objects
+            if obj.type == 'MESH':
+                print(obj, obj.type)
+                obj.animation_data_clear()
+                bpy.context.view_layer.objects.active = obj
+                obj.select_set(True)
+                bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+            else:
+                obj.select_set(False)
+
+        # Ensure you are in Object Mode
+        if bpy.context.object.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        # Get the active object
+        obj = bpy.context.active_object
+        print("ACTIVE: ", obj)
+        # bpy.ops.wm.save_as_mainfile(filepath="/usr/local/workdir/output/test.blend")
+
+        if not obj:
+            print("No active object selected.")
+            exit()
+
+        if obj.type != 'MESH':
+            print("Selected object is not a mesh.")
+            exit()
+
+        # Ensure the object has UV coordinates
+        if not obj.data.uv_layers:
+            print("The object does not have UV coordinates. Add a UV map first.")
+            exit()
+
+        # Create a temporary displacement material
+        temp_material = bpy.data.materials.new(name="TempDisplacementMaterial")
+        temp_material.use_nodes = True
+        obj.data.materials.append(temp_material)
+
+        # Get the node tree of the material
+        node_tree = temp_material.node_tree
+        nodes = node_tree.nodes
+        links = node_tree.links
+
+        # Clear existing nodes
+        for node in nodes:
+            nodes.remove(node)
+
+        # Add nodes for displacement setup
+        tex_node = nodes.new(type='ShaderNodeTexImage')
+        tex_node.image = None  # User must load the normal map
+        tex_node.interpolation = 'Closest'
+        tex_node.extension = 'REPEAT'
+
+        disp_node = nodes.new(type='ShaderNodeDisplacement')
+        output_node = nodes.new(type='ShaderNodeOutputMaterial')
+
+        # Connect nodes
+        links.new(tex_node.outputs['Color'], disp_node.inputs['Height'])
+        links.new(disp_node.outputs['Displacement'], output_node.inputs['Displacement'])
+
+        # Assign a displacement map
+        bpy.ops.image.open(filepath="./output/DisplacementMap.png")  # Change to your normal map path
+        # bpy.ops.image.open(filepath="//normal_map.png")  # Change to your normal map path
+        image = bpy.data.images['DisplacementMap.png']  # Ensure the name matches the file
+        tex_node.image = image
+
+        # Set render engine to Cycles and enable displacement
+        bpy.context.scene.render.engine = 'CYCLES'
+        bpy.context.scene.cycles.feature_set = 'EXPERIMENTAL'
+
+        # Enable displacement on the material
+        temp_material.cycles.displacement_method = 'BOTH'
+
+        # Apply a Subdivision Surface Modifier for finer displacement
+        subdiv_mod = obj.modifiers.new(name="Subdivision", type='SUBSURF')
+        subdiv_mod.levels = 4  # Change the subdivision levels as needed
+        subdiv_mod.render_levels = 4
+
+        # Add a Displacement Modifier
+        disp_mod = obj.modifiers.new(name="Displacement", type='DISPLACE')
+        disp_mod.texture = bpy.data.textures.new(name="DisplacementTexture", type='IMAGE')
+        disp_mod.texture.image = image
+        disp_mod.texture_coords = 'UV'
+        disp_mod.mid_level = 0.5
+        disp_mod.strength = 0.3  # Adjust strength as needed
+
+        # Apply the Displacement Modifier to update the geometry
+        bpy.ops.object.modifier_apply(modifier=subdiv_mod.name)
+        bpy.ops.object.modifier_apply(modifier=disp_mod.name)
+
+        # Cleanup: Remove the temporary material
+        # obj.data.materials.remove(temp_material)
+        for i, material in enumerate(obj.data.materials):
+            if material == temp_material:
+                obj.data.materials.pop(index=i)
+                break
+
+        # Save the updated model to a file
+        output_path = bpy.path.abspath("./output/updated_model.obj")  # Change to your desired output path
+        bpy.ops.export_scene.obj(filepath=output_path, use_selection=True)
+        print(f"Updated model saved to {output_path}")
+
+        # bpy.ops.export_scene.obj(filepath=os.path.join(export_dir, dir_name + "_input.obj"),
+        #                        check_existing=True, filter_glob='*.obj;*.mtl', use_selection=False,
+        #                        use_animation=False, use_mesh_modifiers=True,
+        #                        use_edges=True, use_smooth_groups=False, use_smooth_groups_bitflags=False,
+        #                        use_normals=True, use_uvs=True,
+        #                        use_materials=True, use_triangles=False, use_nurbs=False, use_vertex_groups=False,
+        #                        use_blen_objects=True,
+        #                        group_by_object=False, group_by_material=False, keep_vertex_order=False,
+        #                        global_scale=1.0, path_mode='AUTO', axis_forward='-Z', axis_up='Y')
+
+
 def orbit_render(file_name, prefix_path, template_path, total_frames, cycles_samples=128, render_resolution=3840, light_type="soft", output_file='project.blend'):
     total_frames = int(total_frames)
     prefix_path = os.path.abspath(prefix_path)
@@ -233,6 +406,9 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, cycles_sam
 
 
 if __name__ == '__main__':
+    bake_normals_in("input/antique_table.zip", "./", "./template.blend")
+    exit(0)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-r", "--render", help="Render images for every project file", action='store_true')
     parser.add_argument("-c", "--cycles", help="Render project in CYCLES (EEVEE by default)", action='store_true')
