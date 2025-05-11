@@ -12,7 +12,7 @@ import random
 import json
 
 
-MAX_DIMENSION = 7
+MAX_DIMENSION = 10
 
 
 class Vector():
@@ -62,8 +62,9 @@ def execute(cmd):
         raise subprocess.CalledProcessError(return_code, cmd)
 
 
-def orbit_render(file_name, prefix_path, template_path, total_frames, cycles_samples=128, render_resolution=3840, light_type="soft", output_file='project.blend'):
+def orbit_render(file_name, prefix_path, template_path, total_frames, total_random_frames=0, cycles_samples=128, render_resolution=3840, light_type="soft", hdri_path=None, camera_jitter=0, output_file='project.blend'):
     total_frames = int(total_frames)
+    total_random_frames = int(total_random_frames)
     prefix_path = os.path.abspath(prefix_path)
     source_path = os.path.join(prefix_path, 'source')
 
@@ -104,6 +105,8 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, cycles_sam
                                          secondary_bone_axis='X', use_prepost_rot=True, axis_forward='-Z', axis_up='Y')
 
     print("Model imported")
+    project_file = os.path.join(prefix_path, output_file)
+    bpy.ops.wm.save_as_mainfile(filepath=project_file)
 
     all_objects = bpy.context.scene.objects  # Get all objects
     new_objects = [all_objects[i] for i, elem in enumerate(all_objects) if elem.name not in system_objects]
@@ -115,11 +118,8 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, cycles_sam
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         max_scale = max(max_scale, max(obj.dimensions))
 
-    scale_factor = MAX_DIMENSION / max_scale
-    print(f"Model max scale: {max_scale}, scaling to {scale_factor}x to normalise size\n")
-
-    bpy.ops.transform.resize(value=(scale_factor, scale_factor, scale_factor))  # Resize
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)  # Apply transforms to all objects
+    # scale_factor = MAX_DIMENSION / max_scale
+    # print(f"Model max scale: {max_scale}, scaling by {scale_factor}x to normalise size\n")
 
     # Bounding box
     bound_box_max, bound_box_min = [-1e7, -1e7, -1e7], [1e7, 1e7, 1e7]
@@ -136,7 +136,16 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, cycles_sam
                                          (bound_box_max[1] + bound_box_min[1]) / 2,
                                          (bound_box_max[2] + bound_box_min[2]) / 2)
 
+    bound_box_scale = max(bound_box_max[0] - bound_box_min[0], bound_box_max[1] - bound_box_min[1], bound_box_max[2] - bound_box_min[2])
+    scale_factor = MAX_DIMENSION / bound_box_scale
+    print(f"Model max scale: {bound_box_scale}, scaling by {scale_factor}x to normalise size\n")
+    bpy.ops.transform.resize(value=(scale_factor, scale_factor, scale_factor))  # Resize
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)  # Apply transforms to all objects
+
     for obj in new_objects:  # Center by cursor position
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
         bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
         obj.location = (0, 0, 0)
     bpy.context.scene.cursor.location = (0, 0, 0)
@@ -151,6 +160,32 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, cycles_sam
     bpy.context.scene.render.resolution_y = render_resolution
     bpy.context.scene.cycles.samples = cycles_samples
 
+    # Set HDRI if needed
+    if hdri_path is not None and hdri_path != "None":
+        # Enable "World" nodes if not already
+        bpy.context.scene.world.use_nodes = True
+        world_nodes = bpy.context.scene.world.node_tree.nodes
+        world_links = bpy.context.scene.world.node_tree.links
+        # Clear existing nodes
+        world_nodes.clear()
+        # Create Environment Texture node
+        env_node = world_nodes.new(type='ShaderNodeTexEnvironment')
+
+        shutil.copy(hdri_path, os.path.join(prefix_path, "hdri" + Path(hdri_path).suffix))
+        env_node.image = bpy.data.images.load("//hdri" + Path(hdri_path).suffix)
+        env_node.location = (-300, 0)
+        # Create Background node
+        bg_node = world_nodes.new(type='ShaderNodeBackground')
+        bg_node.location = (0, 0)
+        # Create World Output node
+        out_node = world_nodes.new(type='ShaderNodeOutputWorld')
+        out_node.location = (300, 0)
+        # Link nodes
+        world_links.new(env_node.outputs['Color'], bg_node.inputs['Color'])
+        world_links.new(bg_node.outputs['Background'], out_node.inputs['Surface'])
+        # IMPORTANT: Disable transparent film to see HDRI
+        bpy.context.scene.render.film_transparent = False
+
     # Turn off metalic value for all materials (they interfere with photogrammetry)
     for mat in bpy.data.materials:
         if not mat.use_nodes:
@@ -162,49 +197,134 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, cycles_sam
                 n.inputs["Roughness"].default_value = 1
 
 
-    # Iterate over all frames
-    steps_on_each_axis = int(total_frames ** 0.5)
-    delta1, delta2 = 360 / steps_on_each_axis, 180 / steps_on_each_axis
-    distance_from_center = 23
-    random_factor = 0.05  # Fraction of `distance_from_center`
+    if total_frames > 0:
+        # Iterate over all frames (first wide pass)
+        steps_on_each_axis = int(total_frames ** 0.5)
+        delta1, delta2 = 360 / steps_on_each_axis, 180 / steps_on_each_axis
+        distance_from_center = 20
 
-    ax1, ax2 = 0, -1 * steps_on_each_axis / 2
+        ax1, ax2 = 0, -1 * steps_on_each_axis / 2
 
-    for frame in range(total_frames):
-        scene.frame_current = frame
+        # Set all main frames
+        for frame in range(1, total_frames + 1):
+            scene.frame_current = frame
 
-        a1 = delta1 * ax1
-        a2 = delta2 * ax2
+            a1 = delta1 * ax1
+            a2 = delta2 * ax2
 
-        distance2 = distance_from_center * math.cos(a2 * math.pi / 180)
-        camera.location = (distance2 * math.sin(a1 * math.pi / 180),
-                           distance2 * math.cos(a1 * math.pi / 180),
-                           distance_from_center * math.sin(a2 * math.pi / 180))
+            distance2 = distance_from_center * math.cos(a2 * math.pi / 180)
+            camera.location = (distance2 * math.sin(a1 * math.pi / 180),
+                               distance2 * math.cos(a1 * math.pi / 180),
+                               distance_from_center * math.sin(a2 * math.pi / 180))
 
-        # Add random jitter to camera positions
-        # for i in range(3):
-        #     camera.location[i] += random.uniform(-1, 1) * distance_from_center * random_factor
+            # Add random jitter to camera positions
+            # for i in range(3):
+            #     camera.location[i] += random.uniform(-1, 1) * camera_jitter
 
-        angle1 = math.atan2(camera.location[0], camera.location[1]) * 180 / math.pi
+            angle1 = math.atan2(camera.location[0], camera.location[1]) * 180 / math.pi
 
-        hyp = math.sqrt(camera.location[0] ** 2 + camera.location[1] ** 2)
-        angle2 = math.atan2(hyp, camera.location[2]) * 180 / math.pi + 90
+            hyp = math.sqrt(camera.location[0] ** 2 + camera.location[1] ** 2)
+            angle2 = math.atan2(hyp, camera.location[2]) * 180 / math.pi + 90
 
-        frame_positions.append([camera.location[0], camera.location[1], camera.location[2], a1, a2, 0])  # All the given angles are in degrees
-        camera.keyframe_insert(data_path="location", frame=frame)  # Add keyframe
+            frame_positions.append([camera.location[0], camera.location[1], camera.location[2], a1, a2, 0])  # All the given angles are in degrees
+            camera.rotation_mode = 'XYZ'  # or 'ZXY', etc. (default is 'XYZ')
+            camera.rotation_euler = (
+                math.radians(-a2),   # X (pitch)
+                math.radians(0),                  # Y (roll — often 0)
+                math.radians(180 - a1)    # Z (yaw)
+            )
 
-        # Update indexes
-        ax1 += 1
-        if ax1 >= steps_on_each_axis:
-            ax1 = 0
-            ax2 += 1
+            camera.keyframe_insert(data_path="rotation_euler", frame=frame)
+            camera.keyframe_insert(data_path="location", frame=frame)  # Add keyframe
+
+            # Update indexes
+            ax1 += 1
+            if ax1 >= steps_on_each_axis:
+                ax1 = 0
+                ax2 += 1
+
+
+    # Iterate over all frames (second righter pass)
+    if total_random_frames > 0:
+        steps_on_each_axis = int(total_random_frames ** 0.5)
+        delta1, delta2 = 360 / steps_on_each_axis, 180 / steps_on_each_axis
+        distance_from_center = 8
+
+        ax1, ax2 = 0, -1 * steps_on_each_axis / 2
+
+        # Set all main frames
+        for frame in range(1, total_random_frames + 1):
+            scene.frame_current = total_frames + frame
+
+            a1 = delta1 * ax1
+            a2 = delta2 * ax2
+
+            distance2 = distance_from_center * math.cos(a2 * math.pi / 180)
+            camera.location = (distance2 * math.sin(a1 * math.pi / 180),
+                               distance2 * math.cos(a1 * math.pi / 180),
+                               distance_from_center * math.sin(a2 * math.pi / 180))
+
+            # Add random jitter to camera positions
+            for i in range(3):
+                camera.location[i] += random.uniform(-1, 1) * camera_jitter
+
+            angle1 = math.atan2(camera.location[0], camera.location[1]) * 180 / math.pi
+
+            hyp = math.sqrt(camera.location[0] ** 2 + camera.location[1] ** 2)
+            angle2 = math.atan2(hyp, camera.location[2]) * 180 / math.pi + 90
+
+            frame_positions.append([camera.location[0], camera.location[1], camera.location[2], a1, a2, 0])  # All the given angles are in degrees
+            camera.rotation_mode = 'XYZ'  # or 'ZXY', etc. (default is 'XYZ')
+            camera.rotation_euler = (
+                math.radians(-a2),   # X (pitch)
+                0,                  # Y (roll — often 0)
+                math.radians(180 - a1)    # Z (yaw)
+            )
+
+            camera.keyframe_insert(data_path="rotation_euler", frame=total_frames + frame)
+            camera.keyframe_insert(data_path="location", frame=total_frames + frame)  # Add keyframe
+
+            # Update indexes
+            ax1 += 1
+            if ax1 >= steps_on_each_axis:
+                ax1 = 0
+                ax2 += 1
+
+
+    # Set all random frames (DEPRECATED FOR NOW)
+    # for frame in range(1, total_frames + 1):
+    #     scene.frame_current = frame
+
+    #     x, y, z = random.uniform(-1, 1) * MAX_DIMENSION
+
+    #     a1 = delta1 * ax1
+    #     a2 = delta2 * ax2
+
+    #     distance2 = distance_from_center * math.cos(a2 * math.pi / 180)
+    #     camera.location = (distance2 * math.sin(a1 * math.pi / 180),
+    #                        distance2 * math.cos(a1 * math.pi / 180),
+    #                        distance_from_center * math.sin(a2 * math.pi / 180))
+
+    #     angle1 = math.atan2(camera.location[0], camera.location[1]) * 180 / math.pi
+
+    #     hyp = math.sqrt(camera.location[0] ** 2 + camera.location[1] ** 2)
+    #     angle2 = math.atan2(hyp, camera.location[2]) * 180 / math.pi + 90
+
+    #     frame_positions.append([camera.location[0], camera.location[1], camera.location[2], a1, a2, 0])  # All the given angles are in degrees
+    #     camera.keyframe_insert(data_path="location", frame=frame)  # Add keyframe
+
+
+    bpy.ops.file.make_paths_relative()
 
     if Path(output_file).suffix == ".blend":  # CYCLES render mode
         # Save project
         project_file = os.path.join(prefix_path, output_file)
         bpy.ops.wm.save_as_mainfile(filepath=project_file)
-        with ZipFile(os.path.join(prefix_path, "project.zip"), "w") as file:
-            file.write(project_file, output_file)
+        with ZipFile(os.path.join(prefix_path, "project.zip"), "w") as zip_file:
+            zip_file.write(project_file, output_file)
+            if hdri_path is not None and hdri_path != "None":
+                zip_file.write(hdri_path, "hdri" + Path(hdri_path).suffix)
+
 
     elif Path(output_file).suffix == ".obj":  # PYTORCH3D render mode
         # Export 3D model
@@ -273,7 +393,7 @@ if __name__ == '__main__':
         os.mkdir(os.path.join(output_dir, "source"))
         shutil.copy(os.path.join(opt.path, "input/", filename), os.path.join(output_dir, "source"))  # Copy model to output folder
 
-        orbit_render(filename, prefix_path=os.path.join(opt.path, "output/", output_folder_name), template_path=os.path.join(opt.path, "template.blend"), total_frames=300)  # Import and normalise size of the model
+        orbit_render(filename, prefix_path=os.path.join(opt.path, "output/", output_folder_name), template_path=os.path.join(opt.path, "template.blend"), total_frames=300, camera_jitter=1)  # Import and normalise size of the model
         print(f"Saved blender project file at {output_dir}")
 
         if opt.render:
