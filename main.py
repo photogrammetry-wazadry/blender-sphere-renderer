@@ -118,9 +118,6 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, total_rand
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         max_scale = max(max_scale, max(obj.dimensions))
 
-    # scale_factor = MAX_DIMENSION / max_scale
-    # print(f"Model max scale: {max_scale}, scaling by {scale_factor}x to normalise size\n")
-
     # Bounding box
     bound_box_max, bound_box_min = [-1e7, -1e7, -1e7], [1e7, 1e7, 1e7]
 
@@ -139,8 +136,6 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, total_rand
     bound_box_scale = max(bound_box_max[0] - bound_box_min[0], bound_box_max[1] - bound_box_min[1], bound_box_max[2] - bound_box_min[2])
     scale_factor = MAX_DIMENSION / bound_box_scale
     print(f"Model max scale: {bound_box_scale}, scaling by {scale_factor}x to normalise size\n")
-    bpy.ops.transform.resize(value=(scale_factor, scale_factor, scale_factor))  # Resize
-    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)  # Apply transforms to all objects
 
     for obj in new_objects:  # Center by cursor position
         bpy.context.view_layer.objects.active = obj
@@ -149,6 +144,13 @@ def orbit_render(file_name, prefix_path, template_path, total_frames, total_rand
         bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
         obj.location = (0, 0, 0)
     bpy.context.scene.cursor.location = (0, 0, 0)
+
+    bpy.ops.object.select_all(action='DESELECT')
+    for obj in new_objects:  # Select the whole model
+        obj.select_set(True)
+
+    bpy.ops.transform.resize(value=(scale_factor, scale_factor, scale_factor))  # Resize
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)  # Apply transforms to all objects
 
     scene = bpy.data.scenes['Scene']
     frame_positions = []
